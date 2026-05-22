@@ -127,6 +127,33 @@ LLM_MODEL_NAME=qwen-plus
 ZEP_API_KEY=your_zep_api_key
 ```
 
+#### 最小连通性测试
+
+如果你已经把 `.env` 配好了，可以先把变量载入当前 shell，再发一个最小的 OpenAI 兼容请求：
+
+```bash
+set -a
+source .env
+set +a
+
+curl "$LLM_BASE_URL/chat/completions" \
+  -H "Authorization: Bearer $LLM_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(cat <<'JSON'
+{
+  "model": "${LLM_MODEL_NAME}",
+  "messages": [
+    {"role": "user", "content": "只回复 ok"}
+  ],
+  "temperature": 0,
+  "max_tokens": 16
+}
+JSON
+)"
+```
+
+返回 200 且响应里能看到 `choices[0].message.content`，就说明基础连通性正常。
+
 #### 2. 安装依赖
 
 ```bash
