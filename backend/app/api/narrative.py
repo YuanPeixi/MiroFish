@@ -22,9 +22,11 @@ def get_narrative_state(project_id: str):
         branch_id = request.args.get("branch_id")
         data = NarrativeManager.list_snapshots(project_id, branch_id=branch_id)
         return jsonify({"success": True, "data": data})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"获取叙事状态失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "获取叙事状态失败"}), 500
 
 
 @narrative_bp.route("/snapshot", methods=["POST"])
@@ -46,9 +48,11 @@ def create_snapshot():
             metadata=data.get("metadata"),
         )
         return jsonify({"success": True, "data": snapshot})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"创建快照失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "创建快照失败"}), 500
 
 
 @narrative_bp.route("/rollback", methods=["POST"])
@@ -62,9 +66,11 @@ def rollback_snapshot():
 
         snapshot = NarrativeManager.rollback(project_id, snapshot_id)
         return jsonify({"success": True, "data": snapshot})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"回滚快照失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "回滚快照失败"}), 500
 
 
 @narrative_bp.route("/branch/derive", methods=["POST"])
@@ -82,9 +88,11 @@ def derive_branch():
             branch_name=data.get("branch_name"),
         )
         return jsonify({"success": True, "data": result})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"派生分支失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "派生分支失败"}), 500
 
 
 @narrative_bp.route("/branch/advance", methods=["POST"])
@@ -105,9 +113,11 @@ def advance_branch():
             summary=data.get("summary"),
         )
         return jsonify({"success": True, "data": snapshot})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"推进分支失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "推进分支失败"}), 500
 
 
 @narrative_bp.route("/branches/score", methods=["POST"])
@@ -120,9 +130,11 @@ def score_branches():
 
         ranking = NarrativeManager.score_branches(project_id)
         return jsonify({"success": True, "data": ranking})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"分支评分失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "分支评分失败"}), 500
 
 
 @narrative_bp.route("/ending/select", methods=["POST"])
@@ -136,9 +148,11 @@ def select_ending():
 
         branch = NarrativeManager.select_branch(project_id, branch_id)
         return jsonify({"success": True, "data": branch})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"选择结局失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "选择结局失败"}), 500
 
 
 @narrative_bp.route("/export/<project_id>", methods=["GET"])
@@ -147,6 +161,8 @@ def export_script(project_id: str):
         branch_id = request.args.get("branch_id")
         result = NarrativeManager.export_script(project_id=project_id, branch_id=branch_id)
         return jsonify({"success": True, "data": result})
+    except ValueError:
+        return jsonify({"success": False, "error": "请求参数不合法"}), 400
     except Exception as e:
         logger.error(f"导出剧本失败: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "导出剧本失败"}), 500

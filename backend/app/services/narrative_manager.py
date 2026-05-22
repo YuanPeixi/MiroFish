@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime
@@ -20,9 +21,21 @@ def _now() -> str:
 class NarrativeManager:
     """叙事状态管理器（文件持久化）"""
 
+    PROJECT_ID_PATTERN = re.compile(r"^proj_[A-Za-z0-9_-]{3,80}$")
+
     @classmethod
     def _project_dir(cls, project_id: str) -> str:
-        return os.path.join(Config.UPLOAD_FOLDER, "projects", project_id)
+        cls._validate_project_id(project_id)
+        projects_root = os.path.abspath(os.path.join(Config.UPLOAD_FOLDER, "projects"))
+        project_dir = os.path.abspath(os.path.join(projects_root, project_id))
+        if not project_dir.startswith(projects_root + os.sep):
+            raise ValueError("非法 project_id")
+        return project_dir
+
+    @classmethod
+    def _validate_project_id(cls, project_id: str) -> None:
+        if not isinstance(project_id, str) or not cls.PROJECT_ID_PATTERN.match(project_id):
+            raise ValueError("非法 project_id")
 
     @classmethod
     def _narrative_dir(cls, project_id: str) -> str:
