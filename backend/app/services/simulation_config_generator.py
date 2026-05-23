@@ -585,7 +585,7 @@ class SimulationConfigGenerator:
 - work_hours (int数组): 工作时段
 - reasoning (string): 简要说明为什么这样配置"""
 
-        system_prompt = "你是社交媒体模拟专家。返回纯JSON格式，时间配置需符合模拟场景中目标用户群体的作息习惯。"
+        system_prompt = "你是叙事模拟专家。返回纯JSON格式，时间配置需符合模拟场景中目标角色群体的作息习惯。"
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}"
 
         try:
@@ -830,7 +830,7 @@ class SimulationConfigGenerator:
                 "summary": e.summary[:summary_len] if e.summary else ""
             })
         
-        prompt = f"""基于以下信息，为每个实体生成社交媒体活动配置。
+        prompt = f"""基于以下信息，为每个实体生成叙事互动配置。
 
 模拟需求: {simulation_requirement}
 
@@ -842,9 +842,9 @@ class SimulationConfigGenerator:
 ## 任务
 为每个实体生成活动配置，注意：
 - **时间符合目标用户群体作息**：以下为参考（东八区），请根据模拟场景调整
-- **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)活动，响应慢(60-240分钟)，影响力高(2.5-3.0)
-- **媒体**（MediaOutlet）：活跃度中(0.4-0.6)，全天活动(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
-- **个人**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间活动(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
+- **官方机构**（University/GovernmentAgency）：活跃度低(0.1-0.3)，工作时间(9-17)参与，响应慢(60-240分钟)，影响力高(2.5-3.0)
+- **媒体/信息节点**（MediaOutlet）：活跃度中(0.4-0.6)，全天可响应(8-23)，响应快(5-30分钟)，影响力高(2.0-2.5)
+- **个人角色**（Student/Person/Alumni）：活跃度高(0.6-0.9)，主要晚间参与(18-23)，响应快(1-15分钟)，影响力低(0.8-1.2)
 - **公众人物/专家**：活跃度中(0.4-0.6)，影响力中高(1.5-2.0)
 
 返回JSON格式（不要markdown）：
@@ -866,7 +866,7 @@ class SimulationConfigGenerator:
     ]
 }}"""
 
-        system_prompt = "你是社交媒体行为分析专家。返回纯JSON，配置需符合模拟场景中目标用户群体的作息习惯。"
+        system_prompt = "你是叙事角色行为分析专家。返回纯JSON，配置需符合模拟场景中目标角色的作息习惯。"
         system_prompt = f"{system_prompt}\n\n{get_language_instruction()}\nIMPORTANT: The 'stance' field value MUST be one of the English strings: 'supportive', 'opposing', 'neutral', 'observer'. All JSON field names and numeric values must remain unchanged. Only natural language text fields should use the specified language."
 
         try:

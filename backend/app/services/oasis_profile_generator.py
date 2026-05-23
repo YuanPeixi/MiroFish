@@ -146,9 +146,9 @@ class OasisProfileGenerator:
     
     将Zep图谱中的实体转换为OASIS模拟所需的Agent Profile
     
-    优化特性：
+        优化特性：
     1. 调用Zep图谱检索功能获取更丰富的上下文
-    2. 生成非常详细的人设（包括基本信息、职业经历、性格特征、社交媒体行为等）
+    2. 生成更贴近剧情语义的角色档案（包括基本信息、职业经历、性格特征、叙事功能等）
     3. 区分个人实体和抽象群体实体
     """
     
@@ -507,7 +507,7 @@ class OasisProfileGenerator:
         
         根据实体类型区分：
         - 个人实体：生成具体的人物设定
-        - 群体/机构实体：生成代表性账号设定
+        - 群体/机构实体：生成代表性角色设定
         """
         
         is_individual = self._is_individual_entity(entity_type)
@@ -671,7 +671,7 @@ class OasisProfileGenerator:
     
     def _get_system_prompt(self, is_individual: bool) -> str:
         """获取系统提示词"""
-        base_prompt = "你是社交媒体用户画像生成专家。生成详细、真实的人设用于舆论模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
+        base_prompt = "你是角色档案生成专家。生成详细、真实的人设用于剧情/叙事模拟,最大程度还原已有现实情况。必须返回有效的JSON格式，所有字符串值不能包含未转义的换行符。"
         return f"{base_prompt}\n\n{get_language_instruction()}"
     
     def _build_individual_persona_prompt(
@@ -687,7 +687,7 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
-        return f"""为实体生成详细的社交媒体用户人设,最大程度还原已有现实情况。
+        return f"""为实体生成详细的角色档案,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -699,12 +699,12 @@ class OasisProfileGenerator:
 
 请生成JSON，包含以下字段:
 
-1. bio: 社交媒体简介，200字
+1. bio: 角色简介，200字
 2. persona: 详细人设描述（2000字的纯文本），需包含:
    - 基本信息（年龄、职业、教育背景、所在地）
    - 人物背景（重要经历、与事件的关联、社会关系）
    - 性格特征（MBTI类型、核心性格、情绪表达方式）
-   - 社交媒体行为（发帖频率、内容偏好、互动风格、语言特点）
+    - 叙事行为（表达习惯、互动风格、语言特点）
    - 立场观点（对话题的态度、可能被激怒/感动的内容）
    - 独特特征（口头禅、特殊经历、个人爱好）
    - 个人记忆（人设的重要部分，要介绍这个个体与事件的关联，以及这个个体在事件中的已有动作与反应）
@@ -736,7 +736,7 @@ class OasisProfileGenerator:
         attrs_str = json.dumps(entity_attributes, ensure_ascii=False) if entity_attributes else "无"
         context_str = context[:3000] if context else "无额外上下文"
         
-        return f"""为机构/群体实体生成详细的社交媒体账号设定,最大程度还原已有现实情况。
+        return f"""为机构/群体实体生成详细的角色档案设定,最大程度还原已有现实情况。
 
 实体名称: {entity_name}
 实体类型: {entity_type}
@@ -748,18 +748,18 @@ class OasisProfileGenerator:
 
 请生成JSON，包含以下字段:
 
-1. bio: 官方账号简介，200字，专业得体
-2. persona: 详细账号设定描述（2000字的纯文本），需包含:
+1. bio: 机构/群体简介，200字，专业得体
+2. persona: 详细角色设定描述（2000字的纯文本），需包含:
    - 机构基本信息（正式名称、机构性质、成立背景、主要职能）
-   - 账号定位（账号类型、目标受众、核心功能）
+    - 叙事定位（角色类型、目标受众、核心功能）
    - 发言风格（语言特点、常用表达、禁忌话题）
    - 发布内容特点（内容类型、发布频率、活跃时间段）
    - 立场态度（对核心话题的官方立场、面对争议的处理方式）
    - 特殊说明（代表的群体画像、运营习惯）
    - 机构记忆（机构人设的重要部分，要介绍这个机构与事件的关联，以及这个机构在事件中的已有动作与反应）
-3. age: 固定填30（机构账号的虚拟年龄）
-4. gender: 固定填"other"（机构账号使用other表示非个人）
-5. mbti: MBTI类型，用于描述账号风格，如ISTJ代表严谨保守
+3. age: 固定填30（机构实体的虚拟年龄）
+4. gender: 固定填"other"（机构实体使用other表示非个人）
+5. mbti: MBTI类型，用于描述实体风格，如ISTJ代表严谨保守
 6. country: 国家（使用中文，如"中国"）
 7. profession: 机构职能描述
 8. interested_topics: 关注领域数组
@@ -769,7 +769,7 @@ class OasisProfileGenerator:
 - persona必须是一段连贯的文字描述，不要使用换行符
 - {get_language_instruction()} (gender字段必须用英文"other")
 - age必须是整数30，gender必须是字符串"other"
-- 机构账号发言要符合其身份定位"""
+- 机构实体表述要符合其身份定位"""
     
     def _generate_profile_rule_based(
         self,
@@ -809,8 +809,8 @@ class OasisProfileGenerator:
         
         elif entity_type_lower in ["mediaoutlet", "socialmediaplatform"]:
             return {
-                "bio": f"Official account for {entity_name}. News and updates.",
-                "persona": f"{entity_name} is a media entity that reports news and facilitates public discourse. The account shares timely updates and engages with the audience on current events.",
+                "bio": f"{entity_name} 的机构/群体档案。",
+                "persona": f"{entity_name} 是一个媒体相关实体，在叙事中承担信息传播与公共沟通功能。其表述保持克制、及时且有立场，但不默认以社交账号的形式存在。",
                 "age": 30,  # 机构虚拟年龄
                 "gender": "other",  # 机构使用other
                 "mbti": "ISTJ",  # 机构风格：严谨保守
@@ -821,8 +821,8 @@ class OasisProfileGenerator:
         
         elif entity_type_lower in ["university", "governmentagency", "ngo", "organization"]:
             return {
-                "bio": f"Official account of {entity_name}.",
-                "persona": f"{entity_name} is an institutional entity that communicates official positions, announcements, and engages with stakeholders on relevant matters.",
+                "bio": f"{entity_name} 的机构/群体档案。",
+                "persona": f"{entity_name} 是一个机构性实体，在叙事中承担发布立场、传递信息与维护秩序的功能，但不被默认写成社交媒体账号。",
                 "age": 30,  # 机构虚拟年龄
                 "gender": "other",  # 机构使用other
                 "mbti": "ISTJ",  # 机构风格：严谨保守
@@ -835,7 +835,7 @@ class OasisProfileGenerator:
             # 默认人设
             return {
                 "bio": entity_summary[:150] if entity_summary else f"{entity_type}: {entity_name}",
-                "persona": entity_summary or f"{entity_name} is a {entity_type.lower()} participating in social discussions.",
+                "persona": entity_summary or f"{entity_name} 是一个 {entity_type.lower()}，在剧情中承担与自身设定相关的叙事功能。",
                 "age": random.randint(25, 50),
                 "gender": random.choice(["male", "female"]),
                 "mbti": random.choice(self.MBTI_TYPES),
@@ -944,7 +944,7 @@ class OasisProfileGenerator:
                     user_name=self._generate_username(entity.name),
                     name=entity.name,
                     bio=f"{entity_type}: {entity.name}",
-                    persona=entity.summary or f"A participant in social discussions.",
+                    persona=entity.summary or f"{entity.name} 在剧情中承担与自身设定相关的叙事功能。",
                     source_entity_uuid=entity.uuid,
                     source_entity_type=entity_type,
                 )
@@ -1000,7 +1000,7 @@ class OasisProfileGenerator:
                         user_name=self._generate_username(entity.name),
                         name=entity.name,
                         bio=f"{entity_type}: {entity.name}",
-                        persona=entity.summary or "A participant in social discussions.",
+                        persona=entity.summary or f"{entity.name} 在剧情中承担与自身设定相关的叙事功能。",
                         source_entity_uuid=entity.uuid,
                         source_entity_type=entity_type,
                     )

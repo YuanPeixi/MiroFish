@@ -216,7 +216,10 @@ class ZepEntityReader:
         self, 
         graph_id: str,
         defined_entity_types: Optional[List[str]] = None,
-        enrich_with_edges: bool = True
+        enrich_with_edges: bool = True,
+        min_relation_count: int = 0,
+        min_summary_length: int = 0,
+        max_entities: Optional[int] = None
     ) -> FilteredEntities:
         """
         筛选出符合预定义实体类型的节点
@@ -229,6 +232,9 @@ class ZepEntityReader:
             graph_id: 图谱ID
             defined_entity_types: 预定义的实体类型列表（可选，如果提供则只保留这些类型）
             enrich_with_edges: 是否获取每个实体的相关边信息
+            min_relation_count: 最小关联边数量，低于该值且摘要过短的节点会被过滤
+            min_summary_length: 最小摘要长度，低于该值且关联边过少的节点会被过滤
+            max_entities: 最多保留的实体数量，按显著性排序后截断
             
         Returns:
             FilteredEntities: 过滤后的实体集合
@@ -244,6 +250,22 @@ class ZepEntityReader:
         
         # 构建节点UUID到节点数据的映射
         node_map = {n["uuid"]: n for n in all_nodes}
+
+        # 预计算节点连接度，用于筛掉低显著性实体并做排序截断
+        relation_count_map: Dict[str, int] = {}
+        if all_edges:
+            for edge in all_edges:
+                source_uuid = edge.get("source_node_uuid")
+                target_uuid = edge.get("target_node_uuid")
+                if source_uuid:
+                    relation_count_map[source_uuid] = relation_count_map.get(source_uuid, 0) + 1
+                if target_uuid:
+                    relation_count_map[target_uuid] = relation_count_map.get(target_uuid, 0) + 1
+
+        def score_node(node: Dict[str, Any], relation_count: int) -> float:
+            summary_text = (node.get("summary") or "").strip()
+            summary_score = min(len(summary_text) / 80.0, 2.0)
+            return relation_count * 3.0 + summary_score
         
         # 筛选符合条件的实体
         filtered_entities = []
@@ -270,6 +292,12 @@ class ZepEntityReader:
             
             entity_types_found.add(entity_type)
             
+            summary_text = (node.get("summary") or "").strip()
+            relation_count = relation_count_map.get(node["uuid"], 0)
+
+            if relation_count < min_relation_count and len(summary_text) < min_summary_length:
+                continue
+
             # 创建实体节点对象
             entity = EntityNode(
                 uuid=node["uuid"],
@@ -318,16 +346,23 @@ class ZepEntityReader:
                 
                 entity.related_nodes = related_nodes
             
-            filtered_entities.append(entity)
+            filtered_entities.append((score_node(node, relation_count), relation_count, len(summary_text), entity))
+
+        filtered_entities.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+
+        if max_entities is not None and max_entities >= 0:
+            filtered_entities = filtered_entities[:max_entities]
+
+        entities_only = [item[3] for item in filtered_entities]
         
-        logger.info(f"筛选完成: 总节点 {total_count}, 符合条件 {len(filtered_entities)}, "
+        logger.info(f"筛选完成: 总节点 {total_count}, 符合条件 {len(entities_only)}, "
                    f"实体类型: {entity_types_found}")
         
         return FilteredEntities(
-            entities=filtered_entities,
+            entities=entities_only,
             entity_types=entity_types_found,
             total_count=total_count,
-            filtered_count=len(filtered_entities),
+            filtered_count=len(entities_only),
         )
     
     def get_entity_with_context(
