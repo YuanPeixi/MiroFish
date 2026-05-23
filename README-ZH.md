@@ -171,6 +171,12 @@ npm run setup
 npm run setup:backend
 ```
 
+#### 虚拟环境说明
+
+`backend/.venv` 和根目录下的 `venv` 不是同一个环境，`npm run dev` / `npm run setup:backend` 可能会优先走后端目录里的环境。若两者混用，容易出现 Python 版本不一致、依赖缺失，或者 `tiktoken`、`camel-oasis` 之类依赖安装失败。
+
+建议统一用 Python 3.12 管理后端环境：如果 `backend/.venv` 已损坏，先删除它，再重新执行 `npm run setup:backend`；如果你已经有可用的根目录 `venv`，也要避免和 `backend/.venv` 混着用。
+
 #### 3. 启动服务
 
 ```bash

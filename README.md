@@ -144,6 +144,12 @@ npm run setup
 npm run setup:backend
 ```
 
+#### Virtual Environment Note
+
+`backend/.venv` and the root-level `venv` are not the same environment. `npm run dev` / `npm run setup:backend` may prefer the backend-side environment, so mixing the two can lead to Python version mismatches, missing packages, or dependency build failures such as `tiktoken` and `camel-oasis`.
+
+The safest approach is to keep the backend on Python 3.12. If `backend/.venv` becomes stale or broken, delete it and run `npm run setup:backend` again. If you already have a working root `venv`, do not mix it with `backend/.venv`.
+
 #### 3. Start Services
 
 ```bash
