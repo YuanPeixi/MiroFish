@@ -1844,6 +1844,7 @@ def get_run_status_detail(simulation_id: str):
         result["twitter_actions"] = [a.to_dict() for a in twitter_actions]
         result["reddit_actions"] = [a.to_dict() for a in reddit_actions]
         result["rounds_count"] = len(run_state.rounds)
+        result["snapshots"] = SimulationRunner.get_snapshots(simulation_id, limit=100)
         # recent_actions 只展示当前最新一轮两个平台的内容
         result["recent_actions"] = [a.to_dict() for a in recent_actions]
         
@@ -1948,6 +1949,38 @@ def get_simulation_timeline(simulation_id: str):
         
     except Exception as e:
         logger.error(f"获取时间线失败: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@simulation_bp.route('/<simulation_id>/snapshots', methods=['GET'])
+def get_simulation_snapshots(simulation_id: str):
+    """
+    获取模拟剧情快照链
+    
+    Query参数：
+        limit: 返回数量（默认50）
+    """
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        snapshots = SimulationRunner.get_snapshots(
+            simulation_id=simulation_id,
+            limit=limit if limit and limit > 0 else 50
+        )
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "count": len(snapshots),
+                "snapshots": snapshots
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"获取剧情快照失败: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e),
