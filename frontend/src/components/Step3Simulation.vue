@@ -612,7 +612,7 @@ const fetchRunStatusDetail = async () => {
       
       // 不自动滚动，让用户自由查看时间轴
       // 新动作会在底部追加
-      if (!snapshots.value.length && Array.isArray(res.data.snapshots)) {
+      if (Array.isArray(res.data.snapshots)) {
         snapshots.value = res.data.snapshots.slice().reverse()
       }
     }

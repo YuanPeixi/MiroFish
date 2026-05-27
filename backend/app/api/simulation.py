@@ -1968,7 +1968,7 @@ def get_simulation_snapshots(simulation_id: str):
         limit = request.args.get('limit', 50, type=int)
         snapshots = SimulationRunner.get_snapshots(
             simulation_id=simulation_id,
-            limit=limit if limit and limit > 0 else 50
+            limit=limit if limit > 0 else 50
         )
         
         return jsonify({
@@ -1980,11 +1980,10 @@ def get_simulation_snapshots(simulation_id: str):
         })
         
     except Exception as e:
-        logger.error(f"获取剧情快照失败: {str(e)}")
+        logger.error(f"获取剧情快照失败: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "error": "获取剧情快照失败"
         }), 500
 
 

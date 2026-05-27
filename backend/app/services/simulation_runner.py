@@ -12,6 +12,7 @@ import threading
 import subprocess
 import signal
 import atexit
+import re
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -194,6 +195,35 @@ class SimulationRunState:
         
         self.updated_at = datetime.now().isoformat()
     
+    def _action_to_story_event(self, action: AgentAction) -> str:
+        """将动作转换为影视叙事语义事件"""
+        action_type_map = {
+            "CREATE_POST": "推进剧情",
+            "QUOTE_POST": "引用线索",
+            "REPOST": "扩散冲突",
+            "LIKE_POST": "表达立场",
+            "CREATE_COMMENT": "触发对话",
+            "SEARCH_POSTS": "检索情报",
+            "FOLLOW": "建立关系",
+            "UPVOTE_POST": "强化主张",
+            "DOWNVOTE_POST": "制造对抗",
+            "DO_NOTHING": "情节停顿",
+        }
+        event_label = action_type_map.get(action.action_type, "角色行动")
+        content = (
+            action.action_args.get("content")
+            or action.action_args.get("quote_content")
+            or action.action_args.get("original_content")
+            or action.action_args.get("post_content")
+            or action.action_args.get("query")
+            or ""
+        )
+        content = str(content).strip()
+        if content:
+            content = content.replace("\n", " ")[:28]
+            return f"{action.agent_name} · {event_label}：{content}"
+        return f"{action.agent_name} · {event_label}"
+    
     def _build_key_events(self, round_num: int, limit: int = 3) -> List[str]:
         """从最近动作提取剧情关键事件"""
         key_events = []
@@ -202,10 +232,22 @@ class SimulationRunState:
                 continue
             if not action.agent_name or not action.action_type:
                 continue
-            key_events.append(f"{action.agent_name}: {action.action_type}")
+            key_events.append(self._action_to_story_event(action))
             if len(key_events) >= limit:
                 break
         return key_events
+    
+    def _infer_story_phase(self, round_num: int) -> str:
+        """根据进度推断剧情阶段"""
+        total_rounds = max(self.total_rounds, 1)
+        progress = round_num / total_rounds
+        if progress <= 0.25:
+            return "开场铺垫"
+        if progress <= 0.55:
+            return "矛盾升级"
+        if progress <= 0.8:
+            return "冲突爆发"
+        return "收束回响"
     
     def upsert_snapshot(self, round_num: int):
         """按轮次创建或更新剧情快照"""
@@ -232,7 +274,7 @@ class SimulationRunState:
                 snapshot_id=snapshot_id,
                 round_num=round_num,
                 created_at=now,
-                story_phase=f"剧情推进轮次 R{round_num}",
+                story_phase=self._infer_story_phase(round_num),
                 current_round=self.current_round,
                 twitter_current_round=self.twitter_current_round,
                 reddit_current_round=self.reddit_current_round,
@@ -318,6 +360,16 @@ class SimulationRunner:
     
     # 图谱记忆更新配置
     _graph_memory_enabled: Dict[str, bool] = {}  # simulation_id -> enabled
+    _SIMULATION_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+    
+    @classmethod
+    def _validate_simulation_id(cls, simulation_id: str) -> str:
+        """校验 simulation_id，避免路径注入"""
+        if not simulation_id or not isinstance(simulation_id, str):
+            raise ValueError("无效的 simulation_id")
+        if not cls._SIMULATION_ID_PATTERN.match(simulation_id):
+            raise ValueError("simulation_id 包含非法字符")
+        return simulation_id
     
     @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
@@ -399,7 +451,8 @@ class SimulationRunner:
                         total_actions_count=s.get("total_actions_count", 0),
                         key_events=s.get("key_events", []),
                     ))
-                except Exception:
+                except Exception as snapshot_err:
+                    logger.warning(f"加载快照数据失败: simulation_id={simulation_id}, snapshot={s}, error={snapshot_err}")
                     continue
             
             return state
@@ -443,6 +496,8 @@ class SimulationRunner:
         Returns:
             SimulationRunState
         """
+        simulation_id = cls._validate_simulation_id(simulation_id)
+        
         # 检查是否已在运行
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
