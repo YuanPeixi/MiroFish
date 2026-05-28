@@ -4,6 +4,7 @@
 """
 
 import os
+import hashlib
 import traceback
 import threading
 from flask import request, jsonify
@@ -22,6 +23,9 @@ from ..models.project import ProjectManager, ProjectStatus
 # 获取日志器
 logger = get_logger('mirofish.api')
 
+# 进程内的本体生成活跃签名表，避免同一请求在同一进程里重复启动后台任务
+ACTIVE_ONTOLOGY_SIGNATURES = set()
+
 
 def allowed_file(filename: str) -> bool:
     """检查文件扩展名是否允许"""
@@ -29,6 +33,86 @@ def allowed_file(filename: str) -> bool:
         return False
     ext = os.path.splitext(filename)[1].lower().lstrip('.')
     return ext in Config.ALLOWED_EXTENSIONS
+
+
+def _compute_request_signature(files, simulation_requirement: str, project_name: str, additional_context: str) -> str:
+    """基于上传内容和参数生成稳定签名，用于幂等化本体生成请求。"""
+    hasher = hashlib.sha256()
+
+    def _update_text(value: str):
+        hasher.update((value or '').encode('utf-8'))
+        hasher.update(b'\0')
+
+    _update_text(project_name)
+    _update_text(simulation_requirement)
+    _update_text(additional_context)
+
+    for file in files:
+        if not file or not file.filename:
+            continue
+
+        file_bytes = file.read()
+        try:
+            file.seek(0)
+        except Exception:
+            pass
+
+        hasher.update(file.filename.encode('utf-8'))
+        hasher.update(b'\0')
+        hasher.update(str(len(file_bytes)).encode('utf-8'))
+        hasher.update(b'\0')
+        hasher.update(hashlib.sha256(file_bytes).digest())
+        hasher.update(b'\0')
+
+    return hasher.hexdigest()
+
+
+def _generate_ontology_worker(project_id: str):
+    """后台执行本体生成，避免同步请求长时间阻塞。"""
+    try:
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            logger.error(f"项目不存在，无法继续本体生成: {project_id}")
+            return
+
+        extracted_text = ProjectManager.get_extracted_text(project_id) or ''
+        document_texts = [extracted_text] if extracted_text else []
+
+        generator = OntologyGenerator()
+        ontology = generator.generate(
+            document_texts=document_texts,
+            simulation_requirement=project.simulation_requirement or '',
+            additional_context=project.additional_context
+        )
+
+        entity_count = len(ontology.get("entity_types", []))
+        edge_count = len(ontology.get("edge_types", []))
+        logger.info(f"本体生成完成: {entity_count} 个实体类型, {edge_count} 个关系类型")
+
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            logger.error(f"项目在保存本体时丢失: {project_id}")
+            return
+
+        project.ontology = {
+            "entity_types": ontology.get("entity_types", []),
+            "edge_types": ontology.get("edge_types", [])
+        }
+        project.analysis_summary = ontology.get("analysis_summary", "")
+        project.status = ProjectStatus.ONTOLOGY_GENERATED
+        ProjectManager.save_project(project)
+        logger.info(f"=== 本体生成完成 === 项目ID: {project.project_id}")
+    except Exception as e:
+        logger.exception(f"本体生成失败: {project_id}")
+        project = ProjectManager.get_project(project_id)
+        if project:
+            project.status = ProjectStatus.FAILED
+            project.error = str(e)
+            ProjectManager.save_project(project)
+    finally:
+        project = ProjectManager.get_project(project_id)
+        if project and project.request_signature:
+            ACTIVE_ONTOLOGY_SIGNATURES.discard(project.request_signature)
 
 
 # ============== 项目管理接口 ==============
@@ -171,11 +255,42 @@ def generate_ontology():
                 "success": False,
                 "error": t('api.requireFileUpload')
             }), 400
+
+        request_signature = _compute_request_signature(
+            uploaded_files,
+            simulation_requirement,
+            project_name,
+            additional_context
+        )
+
+        existing_project = ProjectManager.find_project_by_signature(request_signature)
+        if existing_project:
+            logger.info(f"复用已有项目: {existing_project.project_id}")
+
+            if existing_project.status == ProjectStatus.ONTOLOGY_GENERATING and request_signature not in ACTIVE_ONTOLOGY_SIGNATURES:
+                logger.info(f"检测到可恢复的本体生成任务，重新启动: {existing_project.project_id}")
+                ACTIVE_ONTOLOGY_SIGNATURES.add(request_signature)
+                worker = threading.Thread(
+                    target=_generate_ontology_worker,
+                    args=(existing_project.project_id,),
+                    daemon=True
+                )
+                worker.start()
+
+            return jsonify({
+                "success": True,
+                "data": existing_project.to_dict(),
+                "message": "项目已存在，已复用现有任务"
+            })
         
         # 创建项目
         project = ProjectManager.create_project(name=project_name)
         project.simulation_requirement = simulation_requirement
+        project.additional_context = additional_context
+        project.request_signature = request_signature
+        project.status = ProjectStatus.ONTOLOGY_GENERATING
         logger.info(f"创建项目: {project.project_id}")
+        ProjectManager.save_project(project)
         
         # 保存文件并提取文本
         document_texts = []
@@ -210,36 +325,25 @@ def generate_ontology():
         # 保存提取的文本
         project.total_text_length = len(all_text)
         ProjectManager.save_extracted_text(project.project_id, all_text)
+        ProjectManager.save_project(project)
         logger.info(f"文本提取完成，共 {len(all_text)} 字符")
         
-        # 生成本体
+        # 后台生成本体，避免同步请求长时间阻塞
         logger.info("调用 LLM 生成本体定义...")
-        generator = OntologyGenerator()
-        ontology = generator.generate(
-            document_texts=document_texts,
-            simulation_requirement=simulation_requirement,
-            additional_context=additional_context if additional_context else None
+        ACTIVE_ONTOLOGY_SIGNATURES.add(request_signature)
+        worker = threading.Thread(
+            target=_generate_ontology_worker,
+            args=(project.project_id,),
+            daemon=True
         )
-        
-        # 保存本体到项目
-        entity_count = len(ontology.get("entity_types", []))
-        edge_count = len(ontology.get("edge_types", []))
-        logger.info(f"本体生成完成: {entity_count} 个实体类型, {edge_count} 个关系类型")
-        
-        project.ontology = {
-            "entity_types": ontology.get("entity_types", []),
-            "edge_types": ontology.get("edge_types", [])
-        }
-        project.analysis_summary = ontology.get("analysis_summary", "")
-        project.status = ProjectStatus.ONTOLOGY_GENERATED
-        ProjectManager.save_project(project)
-        logger.info(f"=== 本体生成完成 === 项目ID: {project.project_id}")
+        worker.start()
         
         return jsonify({
             "success": True,
             "data": {
                 "project_id": project.project_id,
                 "project_name": project.name,
+                "status": project.status.value,
                 "ontology": project.ontology,
                 "analysis_summary": project.analysis_summary,
                 "files": project.files,

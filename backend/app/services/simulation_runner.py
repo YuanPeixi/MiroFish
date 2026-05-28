@@ -12,6 +12,7 @@ import threading
 import subprocess
 import signal
 import atexit
+import re
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -99,6 +100,39 @@ class RoundSummary:
 
 
 @dataclass
+class SimulationSnapshot:
+    """剧情快照"""
+    snapshot_id: str
+    round_num: int
+    created_at: str
+    story_phase: str
+    current_round: int = 0
+    twitter_current_round: int = 0
+    reddit_current_round: int = 0
+    simulated_hours: int = 0
+    twitter_actions_count: int = 0
+    reddit_actions_count: int = 0
+    total_actions_count: int = 0
+    key_events: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "round_num": self.round_num,
+            "created_at": self.created_at,
+            "story_phase": self.story_phase,
+            "current_round": self.current_round,
+            "twitter_current_round": self.twitter_current_round,
+            "reddit_current_round": self.reddit_current_round,
+            "simulated_hours": self.simulated_hours,
+            "twitter_actions_count": self.twitter_actions_count,
+            "reddit_actions_count": self.reddit_actions_count,
+            "total_actions_count": self.total_actions_count,
+            "key_events": self.key_events,
+        }
+
+
+@dataclass
 class SimulationRunState:
     """模拟运行状态（实时）"""
     simulation_id: str
@@ -133,6 +167,10 @@ class SimulationRunState:
     recent_actions: List[AgentAction] = field(default_factory=list)
     max_recent_actions: int = 50
     
+    # 剧情快照链
+    snapshots: List[SimulationSnapshot] = field(default_factory=list)
+    max_snapshots: int = 300
+    
     # 时间戳
     started_at: Optional[str] = None
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -156,6 +194,101 @@ class SimulationRunState:
             self.reddit_actions_count += 1
         
         self.updated_at = datetime.now().isoformat()
+    
+    def _action_to_story_event(self, action: AgentAction) -> str:
+        """将动作转换为影视叙事语义事件"""
+        action_type_map = {
+            "CREATE_POST": "推进剧情",
+            "QUOTE_POST": "引用线索",
+            "REPOST": "扩散冲突",
+            "LIKE_POST": "表达立场",
+            "CREATE_COMMENT": "触发对话",
+            "SEARCH_POSTS": "检索情报",
+            "FOLLOW": "建立关系",
+            "UPVOTE_POST": "强化主张",
+            "DOWNVOTE_POST": "制造对抗",
+            "DO_NOTHING": "情节停顿",
+        }
+        event_label = action_type_map.get(action.action_type, "角色行动")
+        content = (
+            action.action_args.get("content")
+            or action.action_args.get("quote_content")
+            or action.action_args.get("original_content")
+            or action.action_args.get("post_content")
+            or action.action_args.get("query")
+            or ""
+        )
+        content = str(content).strip()
+        if content:
+            content = content.replace("\n", " ")[:28]
+            return f"{action.agent_name} · {event_label}：{content}"
+        return f"{action.agent_name} · {event_label}"
+    
+    def _build_key_events(self, round_num: int, limit: int = 3) -> List[str]:
+        """从最近动作提取剧情关键事件"""
+        key_events = []
+        for action in self.recent_actions:
+            if action.round_num != round_num:
+                continue
+            if not action.agent_name or not action.action_type:
+                continue
+            key_events.append(self._action_to_story_event(action))
+            if len(key_events) >= limit:
+                break
+        return key_events
+    
+    def _infer_story_phase(self, round_num: int) -> str:
+        """根据进度推断剧情阶段"""
+        total_rounds = max(self.total_rounds, 1)
+        progress = round_num / total_rounds
+        if progress <= 0.25:
+            return "开场铺垫"
+        if progress <= 0.55:
+            return "矛盾升级"
+        if progress <= 0.8:
+            return "冲突爆发"
+        return "收束回响"
+    
+    def upsert_snapshot(self, round_num: int):
+        """按轮次创建或更新剧情快照"""
+        if round_num <= 0:
+            return
+        
+        snapshot_id = f"snap_r{round_num:04d}"
+        now = datetime.now().isoformat()
+        key_events = self._build_key_events(round_num)
+        
+        existing = next((s for s in self.snapshots if s.snapshot_id == snapshot_id), None)
+        if existing:
+            existing.created_at = now
+            existing.current_round = self.current_round
+            existing.twitter_current_round = self.twitter_current_round
+            existing.reddit_current_round = self.reddit_current_round
+            existing.simulated_hours = self.simulated_hours
+            existing.twitter_actions_count = self.twitter_actions_count
+            existing.reddit_actions_count = self.reddit_actions_count
+            existing.total_actions_count = self.twitter_actions_count + self.reddit_actions_count
+            existing.key_events = key_events
+        else:
+            self.snapshots.append(SimulationSnapshot(
+                snapshot_id=snapshot_id,
+                round_num=round_num,
+                created_at=now,
+                story_phase=self._infer_story_phase(round_num),
+                current_round=self.current_round,
+                twitter_current_round=self.twitter_current_round,
+                reddit_current_round=self.reddit_current_round,
+                simulated_hours=self.simulated_hours,
+                twitter_actions_count=self.twitter_actions_count,
+                reddit_actions_count=self.reddit_actions_count,
+                total_actions_count=self.twitter_actions_count + self.reddit_actions_count,
+                key_events=key_events,
+            ))
+        
+        self.snapshots.sort(key=lambda s: s.round_num)
+        if len(self.snapshots) > self.max_snapshots:
+            self.snapshots = self.snapshots[-self.max_snapshots:]
+        self.updated_at = now
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -190,6 +323,7 @@ class SimulationRunState:
         result = self.to_dict()
         result["recent_actions"] = [a.to_dict() for a in self.recent_actions]
         result["rounds_count"] = len(self.rounds)
+        result["snapshots"] = [s.to_dict() for s in self.snapshots]
         return result
 
 
@@ -226,6 +360,16 @@ class SimulationRunner:
     
     # 图谱记忆更新配置
     _graph_memory_enabled: Dict[str, bool] = {}  # simulation_id -> enabled
+    _SIMULATION_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+    
+    @classmethod
+    def _validate_simulation_id(cls, simulation_id: str) -> str:
+        """校验 simulation_id，避免路径注入"""
+        if not simulation_id or not isinstance(simulation_id, str):
+            raise ValueError("无效的 simulation_id")
+        if not cls._SIMULATION_ID_PATTERN.match(simulation_id):
+            raise ValueError("simulation_id 包含非法字符")
+        return simulation_id
     
     @classmethod
     def get_run_state(cls, simulation_id: str) -> Optional[SimulationRunState]:
@@ -290,6 +434,27 @@ class SimulationRunner:
                     success=a.get("success", True),
                 ))
             
+            snapshots_data = data.get("snapshots", [])
+            for s in snapshots_data:
+                try:
+                    state.snapshots.append(SimulationSnapshot(
+                        snapshot_id=s.get("snapshot_id", ""),
+                        round_num=s.get("round_num", 0),
+                        created_at=s.get("created_at", ""),
+                        story_phase=s.get("story_phase", ""),
+                        current_round=s.get("current_round", 0),
+                        twitter_current_round=s.get("twitter_current_round", 0),
+                        reddit_current_round=s.get("reddit_current_round", 0),
+                        simulated_hours=s.get("simulated_hours", 0),
+                        twitter_actions_count=s.get("twitter_actions_count", 0),
+                        reddit_actions_count=s.get("reddit_actions_count", 0),
+                        total_actions_count=s.get("total_actions_count", 0),
+                        key_events=s.get("key_events", []),
+                    ))
+                except Exception as snapshot_err:
+                    logger.warning(f"加载快照数据失败: simulation_id={simulation_id}, snapshot={s}, error={snapshot_err}")
+                    continue
+            
             return state
         except Exception as e:
             logger.error(f"加载运行状态失败: {str(e)}")
@@ -331,6 +496,8 @@ class SimulationRunner:
         Returns:
             SimulationRunState
         """
+        simulation_id = cls._validate_simulation_id(simulation_id)
+        
         # 检查是否已在运行
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
@@ -659,6 +826,7 @@ class SimulationRunner:
                                         state.current_round = round_num
                                     # 总体时间取两个平台的最大值
                                     state.simulated_hours = max(state.twitter_simulated_hours, state.reddit_simulated_hours)
+                                    state.upsert_snapshot(round_num)
                                 
                                 continue
                             
@@ -1055,6 +1223,19 @@ class SimulationRunner:
             })
         
         return result
+    
+    @classmethod
+    def get_snapshots(cls, simulation_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取剧情快照链"""
+        state = cls.get_run_state(simulation_id)
+        if not state:
+            return []
+        
+        snapshots = sorted(state.snapshots, key=lambda s: s.round_num, reverse=True)
+        if limit > 0:
+            snapshots = snapshots[:limit]
+        
+        return [s.to_dict() for s in snapshots]
     
     @classmethod
     def get_agent_stats(cls, simulation_id: str) -> List[Dict[str, Any]]:
@@ -1765,4 +1946,3 @@ class SimulationRunner:
             results = results[:limit]
         
         return results
-

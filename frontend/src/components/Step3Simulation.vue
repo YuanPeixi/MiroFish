@@ -9,7 +9,7 @@
             <svg class="platform-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
             </svg>
-            <span class="platform-name">Info Plaza</span>
+            <span class="platform-name">Main Storyline</span>
             <span v-if="runStatus.twitter_completed" class="status-badge">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3">
                 <polyline points="20 6 9 17 4 12"></polyline>
@@ -32,14 +32,14 @@
           </div>
           <!-- 可用动作提示 -->
           <div class="actions-tooltip">
-            <div class="tooltip-title">Available Actions</div>
+            <div class="tooltip-title">Narrative Moves</div>
             <div class="tooltip-actions">
-              <span class="tooltip-action">POST</span>
-              <span class="tooltip-action">LIKE</span>
-              <span class="tooltip-action">REPOST</span>
-              <span class="tooltip-action">QUOTE</span>
-              <span class="tooltip-action">FOLLOW</span>
-              <span class="tooltip-action">IDLE</span>
+              <span class="tooltip-action">SCENE</span>
+              <span class="tooltip-action">CONFLICT</span>
+              <span class="tooltip-action">TURN</span>
+              <span class="tooltip-action">DIALOGUE</span>
+              <span class="tooltip-action">RELATION</span>
+              <span class="tooltip-action">PAUSE</span>
             </div>
           </div>
         </div>
@@ -50,7 +50,7 @@
             <svg class="platform-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
             </svg>
-            <span class="platform-name">Topic Community</span>
+            <span class="platform-name">Sub Storyline</span>
             <span v-if="runStatus.reddit_completed" class="status-badge">
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3">
                 <polyline points="20 6 9 17 4 12"></polyline>
@@ -73,18 +73,16 @@
           </div>
           <!-- 可用动作提示 -->
           <div class="actions-tooltip">
-            <div class="tooltip-title">Available Actions</div>
+            <div class="tooltip-title">Narrative Moves</div>
             <div class="tooltip-actions">
-              <span class="tooltip-action">POST</span>
-              <span class="tooltip-action">COMMENT</span>
-              <span class="tooltip-action">LIKE</span>
-              <span class="tooltip-action">DISLIKE</span>
+              <span class="tooltip-action">SCENE</span>
+              <span class="tooltip-action">DIALOGUE</span>
+              <span class="tooltip-action">REACTION</span>
+              <span class="tooltip-action">DEBATE</span>
               <span class="tooltip-action">SEARCH</span>
               <span class="tooltip-action">TREND</span>
-              <span class="tooltip-action">FOLLOW</span>
-              <span class="tooltip-action">MUTE</span>
-              <span class="tooltip-action">REFRESH</span>
-              <span class="tooltip-action">IDLE</span>
+              <span class="tooltip-action">SHIFT</span>
+              <span class="tooltip-action">PAUSE</span>
             </div>
           </div>
         </div>
@@ -120,6 +118,21 @@
               <span class="mono">{{ redditActionsCount }}</span>
             </span>
           </span>
+        </div>
+      </div>
+      
+      <div class="snapshot-chain" v-if="snapshots.length > 0">
+        <div class="snapshot-chain-title">剧情快照链</div>
+        <div class="snapshot-list">
+          <div class="snapshot-item" v-for="snapshot in snapshots" :key="snapshot.snapshot_id">
+            <div class="snapshot-meta">
+              <span class="snapshot-round">R{{ snapshot.round_num }}</span>
+              <span class="snapshot-phase">{{ snapshot.story_phase }}</span>
+            </div>
+            <div class="snapshot-stats mono">
+              {{ snapshot.total_actions_count }} EVENTS • {{ snapshot.simulated_hours }}h
+            </div>
+          </div>
         </div>
       </div>
       
@@ -293,7 +306,8 @@ import {
   startSimulation,
   stopSimulation,
   getRunStatus,
-  getRunStatusDetail
+  getRunStatusDetail,
+  getSimulationSnapshots
 } from '../api/simulation'
 import { generateReport } from '../api/report'
 
@@ -324,6 +338,7 @@ const startError = ref(null)
 const runStatus = ref({})
 const allActions = ref([]) // 所有动作（增量累积）
 const actionIds = ref(new Set()) // 用于去重的动作ID集合
+const snapshots = ref([])
 const scrollContainer = ref(null)
 
 // Computed
@@ -371,6 +386,7 @@ const resetAllState = () => {
   runStatus.value = {}
   allActions.value = []
   actionIds.value = new Set()
+  snapshots.value = []
   prevTwitterRound.value = 0
   prevRedditRound.value = 0
   startError.value = null
@@ -423,6 +439,8 @@ const doStartSimulation = async () => {
       
       startStatusPolling()
       startDetailPolling()
+      startSnapshotPolling()
+      fetchSnapshots()
     } else {
       startError.value = res.error || '启动失败'
       addLog(t('log.startFailed', { error: res.error || t('common.unknownError') }))
@@ -465,6 +483,7 @@ const handleStopSimulation = async () => {
 // 轮询状态
 let statusTimer = null
 let detailTimer = null
+let snapshotTimer = null
 
 const startStatusPolling = () => {
   statusTimer = setInterval(fetchRunStatus, 2000)
@@ -472,6 +491,10 @@ const startStatusPolling = () => {
 
 const startDetailPolling = () => {
   detailTimer = setInterval(fetchRunStatusDetail, 3000)
+}
+
+const startSnapshotPolling = () => {
+  snapshotTimer = setInterval(fetchSnapshots, 4000)
 }
 
 const stopPolling = () => {
@@ -482,6 +505,10 @@ const stopPolling = () => {
   if (detailTimer) {
     clearInterval(detailTimer)
     detailTimer = null
+  }
+  if (snapshotTimer) {
+    clearInterval(snapshotTimer)
+    snapshotTimer = null
   }
 }
 
@@ -502,12 +529,12 @@ const fetchRunStatus = async () => {
       
       // 分别检测各平台的轮次变化并输出日志
       if (data.twitter_current_round > prevTwitterRound.value) {
-        addLog(`[Plaza] R${data.twitter_current_round}/${data.total_rounds} | T:${data.twitter_simulated_hours || 0}h | A:${data.twitter_actions_count}`)
+        addLog(`[主线] R${data.twitter_current_round}/${data.total_rounds} | T:${data.twitter_simulated_hours || 0}h | E:${data.twitter_actions_count}`)
         prevTwitterRound.value = data.twitter_current_round
       }
       
       if (data.reddit_current_round > prevRedditRound.value) {
-        addLog(`[Community] R${data.reddit_current_round}/${data.total_rounds} | T:${data.reddit_simulated_hours || 0}h | A:${data.reddit_actions_count}`)
+        addLog(`[支线] R${data.reddit_current_round}/${data.total_rounds} | T:${data.reddit_simulated_hours || 0}h | E:${data.reddit_actions_count}`)
         prevRedditRound.value = data.reddit_current_round
       }
       
@@ -585,9 +612,25 @@ const fetchRunStatusDetail = async () => {
       
       // 不自动滚动，让用户自由查看时间轴
       // 新动作会在底部追加
+      if (Array.isArray(res.data.snapshots)) {
+        snapshots.value = res.data.snapshots.slice().reverse()
+      }
     }
   } catch (err) {
     console.warn('获取详细状态失败:', err)
+  }
+}
+
+const fetchSnapshots = async () => {
+  if (!props.simulationId) return
+  
+  try {
+    const res = await getSimulationSnapshots(props.simulationId, 30)
+    if (res.success && res.data) {
+      snapshots.value = (res.data.snapshots || []).slice().reverse()
+    }
+  } catch (err) {
+    console.warn('获取剧情快照失败:', err)
   }
 }
 
@@ -953,6 +996,55 @@ onUnmounted(() => {
 .breakdown-divider { color: #DDD; }
 .breakdown-item.twitter { color: #000; }
 .breakdown-item.reddit { color: #000; }
+
+.snapshot-chain {
+  padding: 10px 24px 0;
+}
+
+.snapshot-chain-title {
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+.snapshot-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.snapshot-item {
+  border: 1px solid #EAEAEA;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #FAFAFA;
+  min-width: 180px;
+}
+
+.snapshot-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.snapshot-round {
+  font-size: 11px;
+  font-weight: 700;
+  color: #111;
+}
+
+.snapshot-phase {
+  font-size: 11px;
+  color: #444;
+}
+
+.snapshot-stats {
+  font-size: 10px;
+  color: #777;
+  margin-top: 6px;
+}
 
 /* --- Timeline Feed --- */
 .timeline-feed {

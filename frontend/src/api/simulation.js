@@ -136,6 +136,17 @@ export const getSimulationTimeline = (simulationId, startRound = 0, endRound = n
 }
 
 /**
+ * 获取剧情快照链
+ * @param {string} simulationId
+ * @param {number} limit - 返回数量
+ */
+export const getSimulationSnapshots = (simulationId, limit = 50) => {
+  return service.get(`/api/simulation/${simulationId}/snapshots`, {
+    params: { limit }
+  })
+}
+
+/**
  * 获取Agent统计信息
  * @param {string} simulationId
  */
@@ -184,4 +195,3 @@ export const interviewAgents = (data) => {
 export const getSimulationHistory = (limit = 20) => {
   return service.get('/api/simulation/history', { params: { limit } })
 }
-

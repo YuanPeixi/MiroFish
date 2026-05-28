@@ -442,6 +442,7 @@ const graphSvg = ref(null)
 
 // 轮询定时器
 let pollTimer = null
+let ontologyPollTimer = null
 
 // 计算属性
 const statusClass = computed(() => {
@@ -604,9 +605,12 @@ const handleNewProject = async () => {
       })
       
       ontologyProgress.value = null
-      
-      // 自动开始图谱构建
-      await startBuildGraph()
+
+      if (response.data.status === 'ontology_generated' && response.data.ontology?.entity_types?.length) {
+        await startBuildGraph()
+      } else {
+        startOntologyPolling()
+      }
     } else {
       error.value = response.error || '本体生成失败'
     }
@@ -629,8 +633,10 @@ const loadProject = async () => {
       updatePhaseByStatus(response.data.status)
       
       // 自动开始图谱构建
-      if (response.data.status === 'ontology_generated' && !response.data.graph_id) {
+      if (response.data.status === 'ontology_generated' && !response.data.graph_id && response.data.ontology?.entity_types?.length) {
         await startBuildGraph()
+      } else if (response.data.status === 'ontology_generating' || response.data.status === 'created') {
+        startOntologyPolling()
       }
       
       // 继续轮询构建中的任务
@@ -658,6 +664,7 @@ const loadProject = async () => {
 const updatePhaseByStatus = (status) => {
   switch (status) {
     case 'created':
+    case 'ontology_generating':
     case 'ontology_generated':
       currentPhase.value = 0
       break
@@ -670,6 +677,46 @@ const updatePhaseByStatus = (status) => {
     case 'failed':
       error.value = projectData.value?.error || '处理失败'
       break
+  }
+}
+
+const startOntologyPolling = () => {
+  stopOntologyPolling()
+  pollOntologyStatus()
+  ontologyPollTimer = setInterval(() => {
+    pollOntologyStatus()
+  }, 3000)
+}
+
+const stopOntologyPolling = () => {
+  if (ontologyPollTimer) {
+    clearInterval(ontologyPollTimer)
+    ontologyPollTimer = null
+  }
+}
+
+const pollOntologyStatus = async () => {
+  if (!currentProjectId.value || currentPhase.value !== 0) {
+    return
+  }
+
+  try {
+    const response = await getProject(currentProjectId.value)
+    if (!response.success) {
+      return
+    }
+
+    projectData.value = response.data
+
+    if (response.data.status === 'ontology_generated' && response.data.ontology?.entity_types?.length) {
+      stopOntologyPolling()
+      await startBuildGraph()
+    } else if (response.data.status === 'failed') {
+      stopOntologyPolling()
+      error.value = response.data.error || '本体生成失败'
+    }
+  } catch (err) {
+    console.error('Poll ontology error:', err)
   }
 }
 
@@ -1087,6 +1134,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopPolling()
   stopGraphPolling()
+  stopOntologyPolling()
 })
 </script>
 

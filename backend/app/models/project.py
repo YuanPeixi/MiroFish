@@ -17,6 +17,7 @@ from ..config import Config
 class ProjectStatus(str, Enum):
     """项目状态"""
     CREATED = "created"              # 刚创建，文件已上传
+    ONTOLOGY_GENERATING = "ontology_generating"  # 本体生成中
     ONTOLOGY_GENERATED = "ontology_generated"  # 本体已生成
     GRAPH_BUILDING = "graph_building"    # 图谱构建中
     GRAPH_COMPLETED = "graph_completed"  # 图谱构建完成
@@ -46,6 +47,8 @@ class Project:
     
     # 配置
     simulation_requirement: Optional[str] = None
+    additional_context: Optional[str] = None
+    request_signature: Optional[str] = None
     chunk_size: int = 500
     chunk_overlap: int = 50
     
@@ -67,6 +70,8 @@ class Project:
             "graph_id": self.graph_id,
             "graph_build_task_id": self.graph_build_task_id,
             "simulation_requirement": self.simulation_requirement,
+            "additional_context": self.additional_context,
+            "request_signature": self.request_signature,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "error": self.error
@@ -92,6 +97,8 @@ class Project:
             graph_id=data.get('graph_id'),
             graph_build_task_id=data.get('graph_build_task_id'),
             simulation_requirement=data.get('simulation_requirement'),
+            additional_context=data.get('additional_context'),
+            request_signature=data.get('request_signature'),
             chunk_size=data.get('chunk_size', 500),
             chunk_overlap=data.get('chunk_overlap', 50),
             error=data.get('error')
@@ -163,6 +170,18 @@ class ProjectManager:
         cls.save_project(project)
         
         return project
+
+    @classmethod
+    def find_project_by_signature(cls, request_signature: str) -> Optional[Project]:
+        """根据请求签名查找已存在项目。"""
+        cls._ensure_projects_dir()
+
+        for project_id in os.listdir(cls.PROJECTS_DIR):
+            project = cls.get_project(project_id)
+            if project and project.request_signature == request_signature and project.status != ProjectStatus.FAILED:
+                return project
+
+        return None
     
     @classmethod
     def save_project(cls, project: Project) -> None:
