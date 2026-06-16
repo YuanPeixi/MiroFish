@@ -23,6 +23,10 @@
       <div class="header-right">
         <LanguageSwitcher />
         <div class="step-divider"></div>
+        <button class="narrative-entry-btn" @click="openNarrativeWorkbench">
+          结局推理
+        </button>
+        <div class="step-divider"></div>
         <div class="workflow-step">
           <span class="step-num">Step {{ currentStep }}/5</span>
           <span class="step-name">{{ $tm('main.stepNames')[currentStep - 1] }}</span>
@@ -178,6 +182,11 @@ const handleGoBack = () => {
     currentStep.value--
     addLog(t('log.returnToStep', { step: currentStep.value, name: stepNames.value[currentStep.value - 1] }))
   }
+}
+
+const openNarrativeWorkbench = () => {
+  if (!currentProjectId.value || currentProjectId.value === 'new') return
+  router.push({ name: 'Narrative', params: { projectId: currentProjectId.value } })
 }
 
 // --- Data Logic ---
@@ -470,6 +479,17 @@ onUnmounted(() => {
   background: #FFF;
   color: #000;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.narrative-entry-btn {
+  border: 1px solid #2563EB;
+  background: #2563EB;
+  color: #FFF;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .status-indicator {
